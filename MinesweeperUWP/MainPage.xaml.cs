@@ -208,7 +208,8 @@ namespace MinesweeperUWP
                 {
                     // Create a new button and bind two actions (LMB & RMB)
                     Button b = new Button();
-                    // TODO: CLICK BEHAVIOUR (Event handling)
+                    b.Tapped += B_Tapped;
+                    b.RightTapped += B_RightTapped;
                     // Add the button to the list of buttons
                     buttonList.Add(b);
                     // Make it a child of the game grid
@@ -244,7 +245,7 @@ namespace MinesweeperUWP
             buttonCreator();
 
             /*
-             * DEBUG : Cheating at Minesweeper (comment out for a fair game)
+             * DEBUG : Cheating at Minesweeper
             */
             foreach (Button b in buttonList)
             {
@@ -256,6 +257,213 @@ namespace MinesweeperUWP
                 }
             }
             /**/
+        }
+        #endregion
+
+        #region Events
+        // Tap event (= LMB)
+        private void B_Tapped(object sender, TappedRoutedEventArgs e)
+        {
+            // Get the index of the sender button and get the corresponding tile
+            Button b = (Button)sender;
+            int index = buttonList.IndexOf(b);
+            Tile t = tileList.ElementAt(index);
+
+            // If game is active AND the tile is not flagged, ambiguous, or already clicked
+            if (gameActive && !(t.IsFlagged) && !(t.IsAmbiguous) && !(t.IsClicked))
+            {
+                // If the tile is not a mine
+                if (!(t.IsMine))
+                {
+                    // Process a non-mine click
+                    nonMineClick((Button)sender, t);
+                }
+                else // is a mine
+                {
+                    // Trigger the mine
+                    mineClick((Button)sender, index);
+                }
+            }
+        }
+        // Right tap event (= RMB). We cycle through NOTHING -> FLAG -> AMBIGUOUS -> NOTHING
+        private void B_RightTapped(object sender, RightTappedRoutedEventArgs e)
+        {
+            // Get the index of the sender button and get the corresponding tile
+            Button b = (Button)sender;
+            int index = buttonList.IndexOf(b);
+            Tile t = tileList.ElementAt(index);
+            
+            // If the game is active and the tile is not clicked
+            if (gameActive && !(t.IsClicked))
+            {
+                // If the tile is not flagged or ambiguous
+                if (!(t.IsFlagged) && !(t.IsAmbiguous))
+                {
+                    // Flag it
+                    b.Content = "F"; // Could use a flag image but sticking to text art here
+                    t.IsFlagged = true;
+                    // Tentatively count one mine found and update the mine count
+                    --mines;
+                    mineCounterTextBlock.Text = $"{mines}";
+                }
+                // If flagged but not ambiguous
+                else if (t.IsFlagged && (!t.IsAmbiguous))
+                {
+                    // Mark ambiguous
+                    b.Content = "?";
+                    t.IsFlagged = false;
+                    t.IsAmbiguous = true;
+                    // Since the last state was flagged, we increment the mine count here
+                    ++mines;
+                    mineCounterTextBlock.Text = $"{mines}";
+                }
+                else // Back to unmarked
+                {
+                    // Clear the button content. Mark it unflagged and unambiguous
+                    b.Content = "";
+                    t.IsFlagged = false;
+                    t.IsAmbiguous = false;
+                }
+            }
+
+            // The part below augments a second RMB click under special conditions (see below) to act as a way to reveal ALL neighbours... At the slight risk of stepping on a mine
+            // If clicked in an active game with no ambiguous neighbours, not a mine itself, but with some mines around, though none unflagged (@_@)
+            if (t.IsClicked && t.Neighbours.Count(x => x.IsAmbiguous) == 0 && t.MinesAround != 0 && !t.IsMine && t.Neighbours.Count(x => x.IsFlagged) == t.MinesAround && gameActive)
+            {
+                // For each neighbour
+                foreach (Tile tile in t.Neighbours)
+                {
+                    // If unflagged with some mines around
+                    if (tile.MinesAround != 0 && !tile.IsFlagged)
+                    {
+                        // Grey it out, label it with the number of mine neighbours, and mark it clicked
+                        buttonList.ElementAt(tileList.IndexOf(tile)).Background = lightGrey;
+                        buttonList.ElementAt(tileList.IndexOf(tile)).Content = $"{tile.MinesAround}";
+                        tile.IsClicked = true;
+                    }
+                    // If no mines around
+                    else if (tile.MinesAround == 0)
+                    {
+                        // Simply grey it out
+                        buttonList.ElementAt(tileList.IndexOf(tile)).Background = lightGrey;
+                    }
+                }
+            }
+            // If clicked in an active game with no ambiguous neighbours, not a mine itself, but with some mines around (@_@)
+            else if (t.IsClicked && t.Neighbours.Count(x => x.IsAmbiguous) == 0 && t.MinesAround != 0 && !t.IsMine && gameActive)
+            {
+                // For each neighbour
+                foreach (Tile tile in t.Neighbours)
+                {
+                    // If it is a mine
+                    if (tile.IsMine)
+                    {
+                        // Trigger it
+                        mineClick(buttonList.ElementAt(tileList.IndexOf(tile)), tileList.IndexOf(tile));
+                    }
+                }
+            }
+        }
+        #endregion
+
+        #region Tap logic
+        // Flood fill logic
+        private void floodFill(Tile tile)
+        {
+            // For each neighbour of a tile
+            foreach (Tile t in tile.Neighbours)
+            {
+                // If valid (i.e. not out of bounds) and unclicked
+                if (t.Row >= 0 && tile.Row < rows && tile.Col >= 0 && tile.Col < cols && !(t.IsClicked)) // Bounds checks
+                {
+                    // If with no mines around it
+                    if (t.MinesAround == 0)
+                    {
+                        // Grey it out, mark it clicked, and recursively flood fill it
+                        buttonList.ElementAt(tileList.IndexOf(t)).Background = lightGrey;
+                        t.IsClicked = true; // Get here and it clicks that 'IsClicked' is technically a misnomer. IsRevealed may be more revealing of its true nature (see also the last if-block under nonMineClick)
+                        floodFill(t);
+                        // This recursion is what creates the effect of clearing blocks of empty tiles
+                    }
+                    // Condition harmless but really superfluous, because does anyone know what it means to have -2 mines around you?
+                    else if (t.MinesAround > 0)
+                    {
+                        // Grey it out, label it with the number of mines in its neighbourhood, and mark it clicked
+                        buttonList.ElementAt(tileList.IndexOf(t)).Background = lightGrey;
+                        buttonList.ElementAt(tileList.IndexOf(t)).Content = $"{t.MinesAround}";
+                        t.IsClicked = true;
+                    }
+                }
+            }
+        }
+
+        // Check for victory
+        private void winCheck()
+        {
+            // Set the victory state and end the game
+            gameState = "Victory!";
+            statusTextBlock.Text = gameState;
+            gameActive = false;
+        }
+
+        // Handle clicks on non-mine tiles
+        private void nonMineClick(Button button, Tile t)
+        {
+            // Grey the tile out
+            button.Background = lightGrey;
+            // If there are mines around it
+            if (t.MinesAround != 0)
+            {
+                // Display the number of mines neighbouring it on the tile
+                button.Content = $"{t.MinesAround}";
+                // And mark it clicked
+                t.IsClicked = true;
+            }
+            else if (t.MinesAround == 0) // Condition harmless but upon reflection, also not really necessary, because which tile in the world has -1 mines around it?
+            {
+                // See flood fill logic
+                floodFill(t);
+            }
+
+            // If all the non-mine tiles have been clicked (or otherwise revealed - see flood fill logic)
+            if (tileList.FindAll(x => x.IsClicked && !x.IsMine).Count() == (tileList.Count() - mineTotal))
+            {
+                // Game won
+                winCheck();
+            }
+        }
+        // Event for clicking (stepping) on mines
+        private void mineClick(Button button, int index)
+        {
+            // Basically, reveal the entire minefield
+            foreach (Button b in buttonList)
+            {
+                // Get the corresponding tile
+                Tile t = tileList.ElementAt(buttonList.IndexOf(b));
+                // If it is a mine
+                if (t.IsMine)
+                {
+                    // Set its background to black
+                    b.Background = black;
+                }
+                // Else if there is a mine around it
+                else if (t.MinesAround != 0)
+                {
+                    // Give it a light grey colour and label it with the number of mines in its neighbours
+                    b.Background = lightGrey;
+                    b.Content = $"{t.MinesAround}";
+                }
+                else // Not a mine, no neighbours are mines
+                {
+                    // Just make it grey
+                    b.Background = lightGrey;
+                }
+            }
+
+            // End the game and display the end state
+            gameState = "Game Over";
+            statusTextBlock.Text = gameState;
+            gameActive = false;
         }
         #endregion
     }
