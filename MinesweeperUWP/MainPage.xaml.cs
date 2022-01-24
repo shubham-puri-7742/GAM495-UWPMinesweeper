@@ -246,7 +246,7 @@ namespace MinesweeperUWP
 
             /*
              * DEBUG : Cheating at Minesweeper
-            */
+            
             foreach (Button b in buttonList)
             {
                 // If the corresponding tile is a mine
@@ -256,7 +256,7 @@ namespace MinesweeperUWP
                     b.Background = new SolidColorBrush(Colors.Red);
                 }
             }
-            /**/
+            */
         }
         #endregion
 
