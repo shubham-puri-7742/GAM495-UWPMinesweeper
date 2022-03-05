@@ -1,4 +1,4 @@
-# GAM495-UWPMinesweeper
+# UWPMinesweeper
 ### C#-UWP Minesweeper App
 
 Building on my IT230 work, which included an introduction to the Universal Windows Platform, I chose to work on implementing the logic for a classic game in C# using UWP for its visual interface.
